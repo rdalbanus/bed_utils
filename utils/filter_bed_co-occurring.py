@@ -31,14 +31,14 @@ def open_maybe_gzipped(filename):
 if args.ties == "max":
     def keep_previous(current, previous):
         if current == previous:
-            return choose([True, False])
+            return choice([True, False])
         else: 
             keep = previous > current 
             return keep
 elif args.ties == "min":
     def keep_previous(current, previous):
         if current == previous:
-            return choose([True, False])
+            return choice([True, False])
         else: 
             keep = previous < current
             return keep
