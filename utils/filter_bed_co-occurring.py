@@ -9,9 +9,9 @@ from random import choice
 # Options
 parser = argparse.ArgumentParser()
 parser.add_argument("-i", dest = "input", type = str, help = "Sorted BED file (can be gzipped)")
-parser.add_argument("-d", dest = "dist", type = int, default = 500, help = "Minimum distance between BED entries")
-parser.add_argument("-c", dest = "col", type = int, help = "Which column should be used for breaking ties (1-based)")
-parser.add_argument("-t", dest = "ties", type = str, help = "Use [min,max] for ties")
+parser.add_argument("-d", dest = "dist", type = int, default = 500, help = "Minimum distance between BED entries [500]")
+parser.add_argument("-c", dest = "col", type = int, help = "Which column should be used for picking entries (1-based)")
+parser.add_argument("-t", dest = "criteria", type = str, help = "Keep [min,max] in a cluster")
 
 args = parser.parse_args()
 
@@ -28,14 +28,14 @@ def open_maybe_gzipped(filename):
     return f
 
 
-if args.ties == "max":
+if args.criteria == "max":
     def keep_previous(current, previous):
         if current == previous:
             return choice([True, False])
         else: 
             keep = previous > current 
             return keep
-elif args.ties == "min":
+elif args.criteria == "min":
     def keep_previous(current, previous):
         if current == previous:
             return choice([True, False])
@@ -46,31 +46,50 @@ else:
     sys.exit("""Comparison should be either "min" or "max"!""")
 
 
+
 ## Main script
 
+# User input
 infile    = args.input
 min_dist  = args.dist
 val_index = args.col - 4
 
+# Start counters
+total_entries     = 0
+entries_outputted = 0
+
+# Parse file
 with open_maybe_gzipped(infile) as input_stream:
         
         # Read first line separately
-        previous_line = input_stream.readline().strip()
-        previous_bed_info = previous_line.split("\t")
+        # assign values directly to previous_line variable
+        previous_line = input_stream.readline()
+        total_entries += 1
+        previous_bed_info = previous_line.strip().split("\t")
         previous_chrom = previous_bed_info.pop(0) 
         previous_start = int(previous_bed_info.pop(0))
         previous_end   = int(previous_bed_info.pop(0))
-        previous_value = float(previous_bed_info[val_index])
+        previous_value = previous_bed_info[val_index]
+        try:
+            previous_value = float(previous_value)
+        except ValueError:
+            sys.exit("Line {} in column {} is not numeric. Check user input!".format(total_entries, args.col))
 
         # Read rest of the file
         for line in input_stream:
+            total_entries += 1
             line = line.strip()
             bed_info = line.split("\t")
+            
             chrom = bed_info.pop(0)
             start = int(bed_info.pop(0))
             end   = int(bed_info.pop(0))
-            value = float(bed_info[val_index])
-            # print(value)
+            value = bed_info[val_index]
+            try:
+                value = float(value)
+            except ValueError:
+                sys.exit("Line {} in column {} is not numeric. Check user input!".format(total_entries, args.col))
+            
             
             # We are in the same chromosome
             if chrom == previous_chrom:
@@ -78,7 +97,9 @@ with open_maybe_gzipped(infile) as input_stream:
                 
                 # Entries are far enough apart - print previous entry and update values
                 if dist_from_last > min_dist:
+                    entries_outputted += 1
                     print(previous_line)
+                    
                     previous_chrom = chrom
                     previous_start = start
                     previous_end   = start
@@ -87,26 +108,36 @@ with open_maybe_gzipped(infile) as input_stream:
                 
                 # Entries are too close - decide which we want to keep
                 else:
-                    keep = keep_previous(value, previous_value)
+                    keep_last = keep_previous(value, previous_value)
                     
                     # Current value is desirable - update everything
-                    if not keep:
+                    if not keep_last:
                         previous_line = line
                         previous_chrom = chrom
                         previous_start = start
                         previous_end   = start
                         previous_value = value
-                    # else: do nothing - we discard current value
+                    # Current value is not desirable - discard it
+                    # else: None
             
-            # We changed chromosomes - print previous and update values
+            # We changed chromosomes - print previous entry and update values
             else:
+                entries_outputted += 1
                 print(previous_line)
+                
                 previous_chrom = chrom
                 previous_start = start
                 previous_end   = start
                 previous_value = value
                 previous_line  = line
-            # print(*[previous_chrom, previous_start, previous_end, previous_value] + bed_info)
+        
         # Print last line
+        entries_outputted += 1
         print(previous_line)
 # We're done
+
+# Print log at the end
+entries_removed = total_entries - entries_outputted
+print("Done!\nProcessed {} BED entries".format(total_entries), file = sys.stderr)
+print("Outputted {} entries".format(entries_outputted), file = sys.stderr)
+print("Discarded {} entries".format(entries_removed), file = sys.stderr)
