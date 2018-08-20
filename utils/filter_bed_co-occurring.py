@@ -42,8 +42,10 @@ elif args.criteria == "min":
         else: 
             keep = previous < current
             return keep
+elif args.criteria == "strict":
+    pass
 else:
-    sys.exit("""Comparison should be either "min" or "max"!""")
+    sys.exit("""Comparison should be either "min", "max", or "strict"!""")
 
 
 
@@ -63,9 +65,9 @@ with open_maybe_gzipped(infile) as input_stream:
         
         # Read first line separately
         # assign values directly to previous_line variable
-        previous_line = input_stream.readline()
+        previous_line = input_stream.readline().strip()
         total_entries += 1
-        previous_bed_info = previous_line.strip().split("\t")
+        previous_bed_info = previous_line.split("\t")
         previous_chrom = previous_bed_info.pop(0) 
         previous_start = int(previous_bed_info.pop(0))
         previous_end   = int(previous_bed_info.pop(0))
@@ -76,7 +78,9 @@ with open_maybe_gzipped(infile) as input_stream:
             sys.exit("Line {} in column {} is not numeric. Check user input!".format(total_entries, args.col))
 
         # Read rest of the file
+        ignore_last = False
         for line in input_stream:
+            # import pdb; pdb.set_trace() # debug
             total_entries += 1
             line = line.strip()
             bed_info = line.split("\t")
@@ -89,42 +93,56 @@ with open_maybe_gzipped(infile) as input_stream:
                 value = float(value)
             except ValueError:
                 sys.exit("Line {} in column {} is not numeric. Check user input!".format(total_entries, args.col))
-            
-            
+
             # We are in the same chromosome
             if chrom == previous_chrom:
                 dist_from_last = abs(start - previous_end)
                 
                 # Entries are far enough apart - print previous entry and update values
                 if dist_from_last > min_dist:
-                    entries_outputted += 1
-                    print(previous_line)
+                    if not ignore_last:
+                        entries_outputted += 1
+                        print(previous_line)
                     
+                    ignore_last = False
                     previous_chrom = chrom
                     previous_start = start
                     previous_end   = start
                     previous_value = value
                     previous_line  = line
                 
-                # Entries are too close - decide which we want to keep
+                # Entries are too close 
                 else:
-                    keep_last = keep_previous(value, previous_value)
+                    # We are not being strict - decide which we want to keep
+                    if args.criteria != "strict":
+                        keep_last = keep_previous(value, previous_value)
+                        
+                        # Current value is desirable - update everything
+                        if not keep_last:
+                            previous_line = line
+                            previous_chrom = chrom
+                            previous_start = start
+                            previous_end   = start
+                            previous_value = value
+                        # Current value is not desirable - discard it
+                        # else: None
                     
-                    # Current value is desirable - update everything
-                    if not keep_last:
+                    # We are being strict - ignore this and previous entry (but update read buffer)
+                    else:
+                        ignore_last = True
                         previous_line = line
                         previous_chrom = chrom
                         previous_start = start
                         previous_end   = start
                         previous_value = value
-                    # Current value is not desirable - discard it
-                    # else: None
             
             # We changed chromosomes - print previous entry and update values
             else:
-                entries_outputted += 1
-                print(previous_line)
+                if not ignore_last:
+                    entries_outputted += 1
+                    print(previous_line)
                 
+                ignore_last = False
                 previous_chrom = chrom
                 previous_start = start
                 previous_end   = start
@@ -132,8 +150,9 @@ with open_maybe_gzipped(infile) as input_stream:
                 previous_line  = line
         
         # Print last line
-        entries_outputted += 1
-        print(previous_line)
+        if not ignore_last:
+            entries_outputted += 1
+            print(previous_line)
 # We're done
 
 # Print log at the end
